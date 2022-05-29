@@ -1,19 +1,20 @@
 const express = require("express");
+const { check } = require("express-validator");
+
+const { getUsers, signup, login } = require("../controllers/users-controller");
 
 const router = express.Router();
 
-const DUMMY_PLACES = [
-  {
-    id: "p1",
-    title: "Our House",
-    description: "Is a very, very, very fine house",
-    location: {
-      lat: 47.4574985,
-      lng: -94.8468996,
-    },
-    address: "1624 4th ST SE, Bemidji, MN 56601",
-    creator: "u1",
-  },
-];
+router.get("/", getUsers);
+router.post(
+  "/signup",
+  [
+    check("name").not().isEmpty(),
+    check("email").normalizeEmail().isEmail(),
+    check("password").isLength({ min: 8 }),
+  ],
+  signup
+);
+router.post("/login", login);
 
 module.exports = router;
