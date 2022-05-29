@@ -2,6 +2,7 @@ const express = require("express");
 const { check } = require("express-validator");
 
 const {
+  getPlaces,
   getPlaceById,
   getPlacesByUserId,
   createPlace,
@@ -11,10 +12,7 @@ const {
 
 const router = express.Router();
 
-router.get("/", (req, res, next) => {
-  console.log("GET request in places");
-  res.json({ message: "It Works." });
-});
+router.get("/", getPlaces);
 
 router.post(
   "/",

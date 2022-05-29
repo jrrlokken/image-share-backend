@@ -1,40 +1,58 @@
-const { v4: uuidv4 } = require("uuid");
+const mongoose = require("mongoose");
 const { validationResult } = require("express-validator");
 
 const HttpError = require("../models/http-error");
 const getCoordsForAddress = require("../util/location");
+const Place = require("../models/place");
+const User = require("../models/user");
 
-let DUMMY_PLACES = [
-  {
-    id: "p1",
-    title: "Our House",
-    description: "Is a very, very, very fine house",
-    location: {
-      lat: 47.4574985,
-      lng: -94.8468996,
-    },
-    address: "1624 4th ST SE, Bemidji, MN 56601",
-    creator: "u1",
-  },
-];
-
-const getPlaceById = (req, res, next) => {
-  const placeId = req.params.placeId;
-  const place = DUMMY_PLACES.find((p) => p.id === placeId);
-  if (!place) {
-    throw new HttpError("Not found", 404);
+const getPlaces = async (req, res, next) => {
+  let places;
+  try {
+    places = await Place.find();
+  } catch (err) {
+    const error = new HttpError("No places found", 404);
+    return next(error);
   }
-  res.json({ place });
+
+  res.json({ places: places.map((p) => p.toObject({ getters: true })) });
 };
 
-const getPlacesByUserId = (req, res, next) => {
-  const userId = req.params.userId;
-  const places = DUMMY_PLACES.filter((p) => p.creator === userId);
+const getPlaceById = async (req, res, next) => {
+  const placeId = req.params.placeId;
+  let place;
 
-  if (places.length === 0) {
+  try {
+    place = await Place.findById(placeId);
+  } catch (err) {
+    const error = new HttpError("Operation failed, please try again", 500);
+    return next(error);
+  }
+
+  if (!place) {
+    const error = new HttpError("Not found", 404);
+    return next(error);
+  }
+  res.json({ place: place.toObject({ getters: true }) });
+};
+
+const getPlacesByUserId = async (req, res, next) => {
+  const userId = req.params.userId;
+
+  let userWithPlaces;
+  try {
+    userWithPlaces = await User.findById(userId).populate("places");
+  } catch (err) {
+    const error = new HttpError("Operation failed, please try again", 500);
+    return next(error);
+  }
+
+  if (!userWithPlaces || userWithPlaces.places.length === 0) {
     return next(new HttpError("Resource not found", 404));
   }
-  res.json({ places });
+  res.json({
+    places: userWithPlaces.places.map((p) => p.toObject({ getters: true })),
+  });
 };
 
 const createPlace = async (req, res, next) => {
@@ -49,49 +67,108 @@ const createPlace = async (req, res, next) => {
 
   try {
     coordinates = await getCoordsForAddress(address);
-  } catch (error) {
+  } catch (err) {
+    const error = new HttpError("Unable to fetch coordinates", 500);
     return next(error);
   }
 
-  const createdPlace = {
-    id: uuidv4(),
+  const createdPlace = new Place({
     title,
     description,
-    location: coordinates,
     address,
+    location: coordinates,
+    image:
+      "https://images.unsplash.com/photo-1622480510913-a2418017b565?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxzZWFyY2h8NXx8d2lsZGVybmVzc3xlbnwwfHwwfHw%3D&auto=format&fit=crop&w=500&q=60",
     creator,
-  };
+  });
 
-  DUMMY_PLACES.push(createdPlace);
+  let user;
+  try {
+    user = await User.findById(creator);
+  } catch (err) {
+    const error = new HttpError("Operation failed", 500);
+    return next(error);
+  }
+
+  if (!user) {
+    const error = new HttpError("User not found", 404);
+    return next(error);
+  }
+
+  try {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    await createdPlace.save({ session: session });
+    user.places.push(createdPlace);
+    await user.save({ session: session });
+    await session.commitTransaction();
+  } catch (err) {
+    const error = new HttpError("Creating place failed, please try again", 500);
+    return next(error);
+  }
 
   res.status(201).json({ place: createdPlace });
 };
 
-const updatePlace = (req, res, next) => {
+const updatePlace = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     console.log(errors);
-    throw new HttpError("Invalid input", 422);
+    return next(new HttpError("Invalid input", 422));
   }
   const { title, description } = req.body;
   const placeId = req.params.placeId;
-  const updatedPlace = { ...DUMMY_PLACES.find((p) => p.id === placeId) };
-  const placeIndex = DUMMY_PLACES.findIndex((p) => p.id === placeId);
+
+  let updatedPlace;
+  try {
+    updatedPlace = await Place.findById(placeId);
+  } catch (err) {
+    const error = new HttpError("Error fetching place", 500);
+    return next(error);
+  }
+
   updatedPlace.title = title;
   updatedPlace.description = description;
-  DUMMY_PLACES[placeIndex] = updatedPlace;
-  res.status(200).json({ place: updatedPlace });
-};
 
-const deletePlace = (req, res, next) => {
-  const placeId = req.params.placeId;
-  if (!DUMMY_PLACES.find((p) => p.id === placeId)) {
-    throw new HttpError("Not found", 404);
+  try {
+    await updatedPlace.save();
+  } catch (err) {
+    const error = new HttpError("Updating place failed, please try again", 500);
+    return next(error);
   }
-  DUMMY_PLACES = DUMMY_PLACES.filter((p) => p.id !== placeId);
-  res.status(200).json({ message: "Deleted" });
+  res.status(200).json({ place: updatedPlace.toObject({ getters: true }) });
 };
 
+const deletePlace = async (req, res, next) => {
+  const placeId = req.params.placeId;
+
+  let place;
+  try {
+    place = await Place.findById(placeId).populate("creator");
+  } catch (err) {
+    const error = new HttpError("Error fetching place", 500);
+    return next(error);
+  }
+
+  if (!place) {
+    return next(new HttpError("Not found", 404));
+  }
+
+  try {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    await place.remove({ session: session });
+    place.creator.places.pull(place);
+    await place.creator.save({ session: session });
+    await session.commitTransaction();
+  } catch (err) {
+    const error = new HttpError("Operation failed, please try again", 500);
+    return next(error);
+  }
+  res.status(200).json({ message: "Deleted", data: place });
+};
+
+exports.getPlaces = getPlaces;
 exports.getPlaceById = getPlaceById;
 exports.getPlacesByUserId = getPlacesByUserId;
 exports.createPlace = createPlace;
