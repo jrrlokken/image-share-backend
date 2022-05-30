@@ -75,16 +75,19 @@ const createPlace = async (req, res, next) => {
   const createdPlace = new Place({
     title,
     description,
-    address,
-    location: coordinates,
     image:
       "https://images.unsplash.com/photo-1622480510913-a2418017b565?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxzZWFyY2h8NXx8d2lsZGVybmVzc3xlbnwwfHwwfHw%3D&auto=format&fit=crop&w=500&q=60",
+    address,
+    location: coordinates,
     creator,
   });
+
+  console.log(createdPlace);
 
   let user;
   try {
     user = await User.findById(creator);
+    console.log(user);
   } catch (err) {
     const error = new HttpError("Operation failed", 500);
     return next(error);
@@ -96,12 +99,12 @@ const createPlace = async (req, res, next) => {
   }
 
   try {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    await createdPlace.save({ session: session });
+    const sess = await mongoose.startSession();
+    sess.startTransaction();
+    await createdPlace.save({ session: sess });
     user.places.push(createdPlace);
-    await user.save({ session: session });
-    await session.commitTransaction();
+    await user.save({ session: sess });
+    await sess.commitTransaction();
   } catch (err) {
     const error = new HttpError("Creating place failed, please try again", 500);
     return next(error);

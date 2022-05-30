@@ -68,5 +68,8 @@ exports.login = async (req, res, next) => {
     return next(new HttpError("Authentication failed", 401));
   }
 
-  res.json({ message: "Logged In" });
+  res.json({
+    message: "Logged In",
+    user: existingUser.toObject({ getters: true }),
+  });
 };
