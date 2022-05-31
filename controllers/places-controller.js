@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { validationResult } = require("express-validator");
+const fs = require("fs");
 
 const HttpError = require("../models/http-error");
 const getCoordsForAddress = require("../util/location");
@@ -75,8 +76,7 @@ const createPlace = async (req, res, next) => {
   const createdPlace = new Place({
     title,
     description,
-    image:
-      "https://images.unsplash.com/photo-1622480510913-a2418017b565?ixlib=rb-1.2.1&ixid=MnwxMjA3fDB8MHxzZWFyY2h8NXx8d2lsZGVybmVzc3xlbnwwfHwwfHw%3D&auto=format&fit=crop&w=500&q=60",
+    image: req.file.path,
     address,
     location: coordinates,
     creator,
@@ -130,6 +130,11 @@ const updatePlace = async (req, res, next) => {
     return next(error);
   }
 
+  if (updatedPlace.creator.toString() !== req.userData.userId) {
+    const error = new HttpError("Unauthorized. Access Denied", 401);
+    return next(error);
+  }
+
   updatedPlace.title = title;
   updatedPlace.description = description;
 
@@ -157,6 +162,13 @@ const deletePlace = async (req, res, next) => {
     return next(new HttpError("Not found", 404));
   }
 
+  if (place.creator.id !== req.userData.userId) {
+    const error = new HttpError("Unauthorized. Access Denied", 401);
+    return next(error);
+  }
+
+  const imagePath = place.image;
+
   try {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -168,6 +180,9 @@ const deletePlace = async (req, res, next) => {
     const error = new HttpError("Operation failed, please try again", 500);
     return next(error);
   }
+
+  fs.unlink(imagePath, (err) => console.log(err));
+
   res.status(200).json({ message: "Deleted", data: place });
 };
 
