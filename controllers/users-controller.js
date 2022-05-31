@@ -53,8 +53,6 @@ exports.signup = async (req, res, next) => {
     places: [],
   });
 
-  console.log(newUser);
-
   try {
     await newUser.save();
   } catch (err) {
